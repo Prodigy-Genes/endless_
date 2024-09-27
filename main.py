@@ -1,8 +1,9 @@
 import pygame
 import random
 
-# Initialize pygame
+# Initialize pygame and its mixer for sound
 pygame.init()
+pygame.mixer.init()
 
 # Define the dimensions of the game window
 WINDOW_WIDTH, WINDOW_HEIGHT = 800, 400
@@ -13,6 +14,22 @@ pygame.display.set_caption("Endless Runner")
 
 # Set up the clock for controlling the frame rate
 clock = pygame.time.Clock()
+
+# Load sound effects (placeholders - replace with actual file paths)
+jump_sound = pygame.mixer.Sound('sound/jump_sound.wav')  # First jump sound
+double_jump_sound = pygame.mixer.Sound('sound/double_jump_sound.mp3')  # Double jump sound
+land_sound = pygame.mixer.Sound('sound/land_sound.mp3')  # Land sound
+hit_sound = pygame.mixer.Sound('sound/hit_sound.mp3')  # Obstacle hit sound
+game_over_sound = pygame.mixer.Sound('sound/gameover_sound.wav')  # Game over sound
+background_music = 'sound/background_music.mp3'  # Background music
+
+# Function to start background music
+def start_background_music():
+    pygame.mixer.music.load(background_music)
+    pygame.mixer.music.play(-1)  # Loop the background music indefinitely
+
+# Start background music at game start
+start_background_music()
 
 # Define player properties
 player_width, player_height = 50, 50
@@ -50,13 +67,19 @@ difficulty_levels = [
 ]
 current_difficulty = 0  # Start at Easy
 
+# Player's lives
+lives = 3
+
+# Load heart image to represent lives (replace with actual file path)
+heart_img = pygame.image.load('images/heart.png')
+heart_img = pygame.transform.scale(heart_img, (30, 30))  # Resize hearts
+
 # Font setup
 font = pygame.font.Font(None, 36)
 
 # Function to reset game state
 def reset_game():
-    """Resets the game state to start again."""
-    global player_y, player_velocity_y, jumps_left, obstacle_x, obstacle_speed, score, max_jump_height, sky_obstacles, current_difficulty
+    global player_y, player_velocity_y, jumps_left, obstacle_x, obstacle_speed, score, max_jump_height, sky_obstacles, current_difficulty, lives
     player_y = WINDOW_HEIGHT - player_height - 50  # Reset player position
     player_velocity_y = 0
     jumps_left = 2  # Reset jumps
@@ -66,6 +89,8 @@ def reset_game():
     max_jump_height = player_y  # Reset max jump height
     sky_obstacles = []  # Clear sky obstacles
     current_difficulty = 0  # Reset difficulty to Easy
+    lives = 3  # Reset lives
+    start_background_music()  # Restart background music
 
 # Function to display the game-over screen and wait for restart
 def game_over_screen():
@@ -81,6 +106,12 @@ def game_over_screen():
     
     pygame.display.update()
 
+    # Play game over sound
+    pygame.mixer.Sound.play(game_over_sound)
+
+    # Stop the background music on game over
+    pygame.mixer.music.stop()
+
     restart = False
     while not restart:
         for event in pygame.event.get():
@@ -91,6 +122,11 @@ def game_over_screen():
                 reset_game()  # Reset game state
                 restart = True
 
+# Function to draw lives as hearts
+def draw_lives():
+    for i in range(lives):
+        window.blit(heart_img, (10 + i * 35, 40))  # Spacing between hearts
+
 # Main game loop
 running = True
 while running:
@@ -99,12 +135,15 @@ while running:
             running = False
         elif event.type == pygame.KEYDOWN:
             # Check for jump and allow double jump
-            if event.key == pygame.K_SPACE and jumps_left > 0:
-                if jumps_left == 2:  # First jump
-                    player_velocity_y = -10  # Initial jump velocity
-                elif jumps_left == 1:  # Second jump
-                    player_velocity_y = -12  # Stronger double jump velocity
-                jumps_left -= 1  # Reduce the number of available jumps
+            if event.key == pygame.K_SPACE:
+                if player_y == ground_y or jumps_left > 0:
+                    if jumps_left == 2 or player_y == ground_y:  # First jump
+                        player_velocity_y = -10  # Initial jump velocity
+                        pygame.mixer.Sound.play(jump_sound)  # Play jump sound
+                    elif jumps_left == 1:  # Second jump
+                        player_velocity_y = -12  # Stronger double jump velocity
+                        pygame.mixer.Sound.play(double_jump_sound)  # Play double jump sound
+                    jumps_left -= 1  # Reduce the number of available jumps
 
     # Apply gravity
     player_y += player_velocity_y
@@ -116,6 +155,8 @@ while running:
 
     # Prevent player from falling below the ground
     if player_y >= ground_y:
+        if player_velocity_y != 0:  # If player was falling and lands
+            pygame.mixer.Sound.play(land_sound)  # Play landing sound
         player_y = ground_y
         player_velocity_y = 0
         jumps_left = 2  # Reset jump count when player hits the ground
@@ -158,50 +199,49 @@ while running:
         sky_obstacles.append([sky_obstacle_x, sky_obstacle_y, sky_obstacle_width, sky_obstacle_height])
 
     # Move and remove sky obstacles
-    for obstacle in sky_obstacles[:]:
-        obstacle[0] -= obstacle_speed  # Move left
-        if obstacle[0] < -obstacle[2]:  # Remove if off-screen
-            sky_obstacles.remove(obstacle)
+    for sky_obstacle in sky_obstacles[:]:
+        sky_obstacle[0] -= obstacle_speed  # Move left with obstacle speed
+        if sky_obstacle[0] < -sky_obstacle[2]:  # If off-screen, remove
+            sky_obstacles.remove(sky_obstacle)
 
-    # Check for collision between player and ground obstacle
-    if (player_x < obstacle_x + obstacle_width and
-        player_x + player_width > obstacle_x and
-        player_y + player_height > obstacle_y):
-        game_over_screen()
+    # Check for collision with ground obstacle
+    if player_x < obstacle_x + obstacle_width and player_x + player_width > obstacle_x:
+        if player_y + player_height > obstacle_y:
+            pygame.mixer.Sound.play(hit_sound)  # Play hit sound
+            obstacle_x = WINDOW_WIDTH  # Reset obstacle position
+            lives -= 1  # Lose a life
+            if lives == 0:  # Check for game over
+                game_over_screen()
 
-    # Check for collision between player and sky obstacles
-    for obstacle in sky_obstacles:
-        if (player_x < obstacle[0] + obstacle[2] and
-            player_x + player_width > obstacle[0] and
-            player_y < obstacle[1] + obstacle[3] and
-            player_y + player_height > obstacle[1]):
-            game_over_screen()
+    # Check for collision with sky obstacles
+    for sky_obstacle in sky_obstacles[:]:
+        if player_x < sky_obstacle[0] + sky_obstacle[2] and player_x + player_width > sky_obstacle[0]:
+            if player_y < sky_obstacle[1] + sky_obstacle[3] and player_y + player_height > sky_obstacle[1]:
+                pygame.mixer.Sound.play(hit_sound)  # Play hit sound
+                sky_obstacles.remove(sky_obstacle)  # Remove the hit obstacle
+                lives -= 1  # Lose a life
+                if lives == 0:  # Check for game over
+                    game_over_screen()
 
-    # Fill the screen with color
-    window.fill((140, 206, 235))
+    # Fill the window with a background color (light blue)
+    window.fill((135, 206, 235))
 
-    # Draw the player rectangle
+    # Draw the player (red rectangle)
     pygame.draw.rect(window, (255, 0, 0), (player_x, player_y, player_width, player_height))
 
-    # Draw the ground obstacle
-    pygame.draw.rect(window, (0, 0, 0), (obstacle_x, obstacle_y, obstacle_width, obstacle_height))
+    # Draw the ground obstacle (green rectangle)
+    pygame.draw.rect(window, (0, 255, 0), (obstacle_x, obstacle_y, obstacle_width, obstacle_height))
 
-    # Draw the sky obstacles
-    for obstacle in sky_obstacles:
-        pygame.draw.rect(window, (0, 100, 255), (obstacle[0], obstacle[1], obstacle[2], obstacle[3]))
+    # Draw the sky obstacles (yellow rectangles)
+    for sky_obstacle in sky_obstacles:
+        pygame.draw.rect(window, (255, 255, 0), (sky_obstacle[0], sky_obstacle[1], sky_obstacle[2], sky_obstacle[3]))
 
-    # Display difficulty level
-    difficulty_text = font.render(f"Difficulty: {difficulty_levels[current_difficulty]['name']}", True, (0, 0, 0))
-    window.blit(difficulty_text, (10, 70))
-
-    # Calculate and display the current jump height
-    current_jump_height = ground_y - max_jump_height
-    jump_height_text = font.render(f"Jump Height: {current_jump_height:.0f}px", True, (0, 0, 0))
-    window.blit(jump_height_text, (10, 40))
-
-    # Render the score on the screen
+    # Display the score in the top left corner
     score_text = font.render(f"Score: {score}", True, (0, 0, 0))
     window.blit(score_text, (10, 10))
+
+    # Draw the player's lives
+    draw_lives()
 
     # Update the display
     pygame.display.update()
@@ -209,5 +249,5 @@ while running:
     # Control the frame rate
     clock.tick(60)
 
-# Quit pygame
+# Quit the game after the loop ends
 pygame.quit()
